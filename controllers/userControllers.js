@@ -1,13 +1,13 @@
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import createResponse from "../helpers/createResponse.js";
 import userModel from "../models/user.js";
+import cloudinary from "../config/cloudinary.js";
+import jwt from 'jsonwebtoken'
 
 // Create user (Register)
 export const createUser = async (req, res) => {
     try {
-        const { name, email, password, userType, phone, profileImage } = req.body;
-
+        const { name, email, password, userType, phone } = req.body;
         if (!name || !email || !password) {
             return createResponse(res, false, "Missing required fields!", []);
         }
@@ -22,13 +22,23 @@ export const createUser = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
+        // ✅ Upload profile image if exists
+        let profileImageUrl = null;
+        if (req.files && req.files.profileImage) {
+            const file = req.files.profileImage; // from Postman form-data key: profileImage
+            const uploadResult = await cloudinary.uploader.upload(file.tempFilePath, {
+                folder: "user_profiles", // optional: Cloudinary folder
+            });
+            profileImageUrl = uploadResult.secure_url;
+        }
+
         const UserData = new userModel({
             name,
             email,
             password: hashedPassword,
             userType,
             phone,
-            profileImage,
+            profileImage: profileImageUrl, // saved Cloudinary URL
         });
 
         await UserData.save();
@@ -37,6 +47,7 @@ export const createUser = async (req, res) => {
             id: UserData._id,
             email: UserData.email,
             name: UserData.name,
+            profileImage: UserData.profileImage,
         });
     } catch (error) {
         console.error("Error creating User:", error);
@@ -44,9 +55,11 @@ export const createUser = async (req, res) => {
     }
 };
 
+
 // Login User
 export const loginUser = async (req, res) => {
     try {
+
         const { email, password } = req.body;
 
         if (!email || !password) {
